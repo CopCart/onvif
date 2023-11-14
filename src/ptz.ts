@@ -348,7 +348,7 @@ export class PTZ {
     if (Array.isArray(result)) {
       // eslint-disable-next-line no-return-assign
       linerase(result).forEach((preset: any) => this.#presets[preset.token] = preset);
-    } else {
+    } else if (result) {
       this.#presets[result.token] = result;
     }
     return this.#presets;

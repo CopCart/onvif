@@ -1,9 +1,10 @@
 {
-  "name": "onvif",
-  "version": "1.0.0-alpha.0",
+  "name": "@vipstorage/onvif",
+  "version": "1.0.0-alpha.4",
   "author": "Andrew D.Laptev <a.d.laptev@gmail.com>",
   "description": "Client to ONVIF NVT devices Profile S: cameras",
-  "main": "lib/onvif.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --build",
     "watch": "tsc --build --watch",

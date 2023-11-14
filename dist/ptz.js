@@ -1,0 +1,281 @@
+"use strict";
+var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
+    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+};
+var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
+    if (kind === "m") throw new TypeError("Private method is not writable");
+    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
+    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
+};
+var _PTZ_nodes, _PTZ_configurations, _PTZ_presets;
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PTZ = void 0;
+const utils_1 = require("./utils");
+/**
+ * PTZ methods
+ */
+class PTZ {
+    constructor(onvif) {
+        _PTZ_nodes.set(this, {});
+        _PTZ_configurations.set(this, {});
+        _PTZ_presets.set(this, {});
+        this.onvif = onvif;
+    }
+    get nodes() {
+        return __classPrivateFieldGet(this, _PTZ_nodes, "f");
+    }
+    get configurations() {
+        return __classPrivateFieldGet(this, _PTZ_configurations, "f");
+    }
+    get presets() {
+        return __classPrivateFieldGet(this, _PTZ_presets, "f");
+    }
+    /**
+    * Returns the properties of the requested PTZ node, if it exists.
+    * Use this function to get maximum number of presets, ranges of admitted values for x, y, zoom, iris, focus
+    */
+    async getNodes() {
+        const [data] = await this.onvif.request({
+            service: 'PTZ',
+            body: '<GetNodes xmlns="http://www.onvif.org/ver20/ptz/wsdl" />',
+        });
+        __classPrivateFieldSet(this, _PTZ_nodes, {}, "f");
+        data[0].getNodesResponse.forEach((ptzNode) => {
+            const node = (0, utils_1.linerase)(ptzNode.PTZNode[0]);
+            __classPrivateFieldGet(this, _PTZ_nodes, "f")[node.token] = node;
+        });
+        return __classPrivateFieldGet(this, _PTZ_nodes, "f");
+    }
+    /**
+     * Get an array with all the existing PTZConfigurations from the device
+     */
+    async getConfigurations() {
+        const [data] = await this.onvif.request({
+            service: 'PTZ',
+            body: '<GetConfigurations xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + '</GetConfigurations>',
+        });
+        __classPrivateFieldSet(this, _PTZ_configurations, {}, "f");
+        if (!Array.isArray(data[0].getConfigurationsResponse[0].PTZConfiguration)) {
+            return __classPrivateFieldGet(this, _PTZ_configurations, "f");
+        }
+        data[0].getConfigurationsResponse[0].PTZConfiguration.forEach((configuration) => {
+            const result = (0, utils_1.linerase)(configuration);
+            __classPrivateFieldGet(this, _PTZ_configurations, "f")[result.token] = result;
+        });
+        return __classPrivateFieldGet(this, _PTZ_configurations, "f");
+    }
+    /**
+     * List supported coordinate systems including their range limitations.
+     * Therefore, the options MAY differ depending on whether the PTZ Configuration is assigned to a Profile containing
+     * a Video Source Configuration. In that case, the options may additionally contain coordinate systems referring to
+     * the image coordinate system described by the Video Source Configuration. If the PTZ Node supports continuous
+     * movements, it shall return a Timeout Range within which Timeouts are accepted by the PTZ Node
+     * @param options
+     * @param options.configurationToken Token of an existing configuration that the options are intended for
+     */
+    async getConfigurationOptions({ configurationToken }) {
+        const [data] = await this.onvif.request({
+            service: 'PTZ',
+            body: '<GetConfigurationOptions xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ConfigurationToken>${configurationToken}</ConfigurationToken>`
+                + '</GetConfigurationOptions>',
+        });
+        return (0, utils_1.linerase)(data);
+    }
+    /**
+     * Operation to request all PTZ presets for the PTZNode in the selected profile. The operation is supported if there
+     * is support for at least on PTZ preset by the PTZNode.
+     * @param options
+     */
+    async getPresets({ profileToken } = {}) {
+        const [data] = await this.onvif.request({
+            service: 'PTZ',
+            body: '<GetPresets xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken || this.onvif.activeSource.profileToken}</ProfileToken>`
+                + '</GetPresets>',
+        });
+        __classPrivateFieldSet(this, _PTZ_presets, {}, "f");
+        const result = (0, utils_1.linerase)(data[0].getPresetsResponse[0].preset);
+        if (Array.isArray(result)) {
+            // eslint-disable-next-line no-return-assign
+            (0, utils_1.linerase)(result).forEach((preset) => __classPrivateFieldGet(this, _PTZ_presets, "f")[preset.token] = preset);
+        }
+        else if (result) {
+            __classPrivateFieldGet(this, _PTZ_presets, "f")[result.token] = result;
+        }
+        return __classPrivateFieldGet(this, _PTZ_presets, "f");
+    }
+    static formatPTZSimpleVector({ pan, tilt, x, y, zoom, } = {
+        x: 0, y: 0, zoom: 0,
+    }) {
+        return {
+            panTilt: {
+                x: pan || x,
+                y: tilt || y,
+            },
+            zoom: {
+                x: zoom,
+            },
+        };
+    }
+    static PTZVectorToXML(input) {
+        const vector = ('x' in input || 'pan' in input) ? PTZ.formatPTZSimpleVector(input) : input;
+        return ((vector.panTilt ? `<PanTilt x="${vector.panTilt.x}" y="${vector.panTilt.y}" xmlns="http://www.onvif.org/ver10/schema"/>` : '')
+            + (vector.zoom ? `<Zoom x="${vector.zoom.x}" xmlns="http://www.onvif.org/ver10/schema"/>` : ''));
+    }
+    /**
+     * Operation to go to a saved preset position for the PTZNode in the selected profile. The operation is supported if
+     * there is support for at least on PTZ preset by the PTZNode.
+     * @param options
+     */
+    async gotoPreset({ profileToken, presetToken, speed }) {
+        await this.onvif.request({
+            service: 'PTZ',
+            body: '<GotoPreset xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken || this.onvif.activeSource.profileToken}</ProfileToken>`
+                + `<PresetToken>${presetToken}</PresetToken>${speed ? `<Speed>${PTZ.PTZVectorToXML(speed)}</Speed>` : ''}</GotoPreset>`,
+        });
+    }
+    /**
+     * The SetPreset command saves the current device position parameters so that the device can move to the saved preset
+     * position through the GotoPreset operation. In order to create a new preset, the SetPresetRequest contains no
+     * PresetToken. If creation is successful, the Response contains the PresetToken which uniquely identifies the Preset.
+     * An existing Preset can be overwritten by specifying the PresetToken of the corresponding Preset. In both cases
+     * (overwriting or creation) an optional PresetName can be specified. The operation fails if the PTZ device is moving
+     * during the SetPreset operation. The device MAY internally save additional states such as imaging properties in the
+     * PTZ Preset which then should be recalled in the GotoPreset operation.
+     * @param options
+     */
+    async setPreset({ profileToken, presetName, presetToken }) {
+        const [data] = await this.onvif.request({
+            service: 'PTZ',
+            body: '<SetPreset xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken ?? this.onvif.activeSource.profileToken}</ProfileToken>`
+                + `<PresetName>${presetName}</PresetName>${presetToken ? `<PresetToken>${presetToken}</PresetToken>` : ''}</SetPreset>`,
+        });
+        return (0, utils_1.linerase)(data[0].setPresetResponse);
+    }
+    /**
+     * Operation to remove a PTZ preset for the Node in the selected profile. The operation is supported if the
+     * PresetPosition capability exists for teh Node in the selected profile.
+     * @param options
+     */
+    async removePreset({ profileToken = this.onvif.activeSource?.profileToken, presetToken }) {
+        await this.onvif.request({
+            service: 'PTZ',
+            body: '<RemovePreset xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken}</ProfileToken>`
+                + `<PresetToken>${presetToken}</PresetToken>`
+                + '</RemovePreset>',
+        });
+    }
+    /**
+     * Operation to move the PTZ device to it's "home" position. The operation is supported if the HomeSupported element
+     * in the PTZNode is true.
+     * @param options
+     */
+    async gotoHomePosition({ profileToken = this.onvif.activeSource?.profileToken, speed }) {
+        await this.onvif.request({
+            service: 'PTZ',
+            body: '<GotoHomePosition xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken}</ProfileToken>${speed ? `<Speed>${PTZ.PTZVectorToXML(speed)}</Speed>` : ''}</GotoHomePosition>`,
+        });
+    }
+    /**
+     * Operation to save current position as the home position. The SetHomePosition command returns with a failure if
+     * the “home” position is fixed and cannot be overwritten. If the SetHomePosition is successful, it is possible
+     * to recall the Home Position with the GotoHomePosition command.
+     * @param options
+     */
+    async setHomePosition({ profileToken = this.onvif.activeSource?.profileToken }) {
+        await this.onvif.request({
+            service: 'PTZ',
+            body: '<SetHomePosition xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken}</ProfileToken>`
+                + '</SetHomePosition>',
+        });
+    }
+    /**
+     * Operation to request PTZ status for the Node in the selected profile.
+     * @param options
+     */
+    async getStatus({ profileToken = this.onvif.activeSource?.profileToken } = {}) {
+        const [data] = await this.onvif.request({
+            service: 'PTZ',
+            body: '<GetStatus xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken}</ProfileToken>`
+                + '</GetStatus>',
+        });
+        return (0, utils_1.linerase)(data).getStatusResponse.PTZStatus;
+    }
+    /**
+     * Operation to move pan,tilt or zoom to a absolute destination.
+     *
+     * The speed argument is optional. If an x/y speed value is given it is up to the device to either use the x value as
+     * absolute resoluting speed vector or to map x and y to the component speed. If the speed argument is omitted, the
+     * default speed set by the PTZConfiguration will be used.
+     * @param options
+     */
+    async absoluteMove({ profileToken = this.onvif.activeSource?.profileToken, position, speed, }) {
+        await this.onvif.request({
+            service: 'PTZ',
+            body: '<AbsoluteMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken}</ProfileToken>`
+                + `<Position>${PTZ.PTZVectorToXML(position)}</Position>${speed ? `<Speed>${PTZ.PTZVectorToXML(speed)}</Speed>` : ''}</AbsoluteMove>`,
+        });
+    }
+    /**
+     * Operation for Relative Pan/Tilt and Zoom Move. The operation is supported if the PTZNode supports at least one
+     * relative Pan/Tilt or Zoom space.
+     *
+     * The speed argument is optional. If an x/y speed value is given it is up to the device to either use the x value as
+     * absolute resoluting speed vector or to map x and y to the component speed. If the speed argument is omitted,
+     * the default speed set by the PTZConfiguration will be used.
+     * @param options
+     */
+    async relativeMove({ profileToken = this.onvif.activeSource?.profileToken, translation, speed, }) {
+        await this.onvif.request({
+            service: 'PTZ',
+            body: '<RelativeMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken}</ProfileToken>`
+                + `<Translation>${PTZ.PTZVectorToXML(translation)}</Translation>${speed ? `<Speed>${PTZ.PTZVectorToXML(speed)}</Speed>` : ''}</RelativeMove>`,
+        });
+    }
+    /**
+     * Operation for continuous Pan/Tilt and Zoom movements. The operation is supported if the PTZNode supports at least
+     * one continuous Pan/Tilt or Zoom space. If the space argument is omitted, the default space set by the
+     * PTZConfiguration will be used.
+     * @param options
+     */
+    async continuousMove({ profileToken = this.onvif.activeSource?.profileToken, velocity, timeout, }) {
+        await this.onvif.request({
+            service: 'PTZ',
+            body: '<ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken}</ProfileToken>`
+                + `<Velocity>${PTZ.PTZVectorToXML(velocity)}</Velocity>${timeout ? `<Timeout>${typeof timeout === 'number' ? `PT${timeout / 1000}S` : timeout}</Timeout>` : ''}</ContinuousMove>`,
+        });
+    }
+    /**
+     * Operation to stop ongoing pan, tilt and zoom movements of absolute relative and continuous type. If no stop
+     * argument for pan, tilt or zoom is set, the device will stop all ongoing pan, tilt and zoom movements.
+     * @param options
+     */
+    async stop(options) {
+        const profileToken = options?.profileToken || this.onvif?.activeSource?.profileToken;
+        const panTilt = options?.panTilt ?? true;
+        const zoom = options?.zoom ?? true;
+        await this.onvif.request({
+            service: 'PTZ',
+            body: '<Stop xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
+                + `<ProfileToken>${profileToken}</ProfileToken><PanTilt>${panTilt}</PanTilt><Zoom>${zoom}</Zoom>`
+                + '</Stop>',
+        });
+    }
+}
+exports.PTZ = PTZ;
+_PTZ_nodes = new WeakMap(), _PTZ_configurations = new WeakMap(), _PTZ_presets = new WeakMap();
+//# sourceMappingURL=ptz.js.map

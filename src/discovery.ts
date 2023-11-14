@@ -119,6 +119,7 @@ export class DiscoverySingleton extends EventEmitter {
         this.emit('error', err);
       });
 
+
       const listener = async (msg: Buffer, rinfo: RemoteInfo) => {
         let data;
         let xml;
